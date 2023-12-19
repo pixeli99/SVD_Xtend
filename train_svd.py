@@ -60,6 +60,48 @@ check_min_version("0.24.0.dev0")
 
 logger = get_logger(__name__, log_level="INFO")
 
+def stratified_uniform(shape, group=0, groups=1, dtype=None, device=None):
+    """Draws stratified samples from a uniform distribution."""
+    if groups <= 0:
+        raise ValueError(f"groups must be positive, got {groups}")
+    if group < 0 or group >= groups:
+        raise ValueError(f"group must be in [0, {groups})")
+    n = shape[-1] * groups
+    offsets = torch.arange(group, n, groups, dtype=dtype, device=device)
+    u = torch.rand(shape, dtype=dtype, device=device)
+    return (offsets + u) / n
+
+def rand_cosine_interpolated(shape, image_d, noise_d_low, noise_d_high, sigma_data=1., min_value=1e-3, max_value=1e3, device='cpu', dtype=torch.float32):
+    """Draws samples from an interpolated cosine timestep distribution (from simple diffusion)."""
+
+    def logsnr_schedule_cosine(t, logsnr_min, logsnr_max):
+        t_min = math.atan(math.exp(-0.5 * logsnr_max))
+        t_max = math.atan(math.exp(-0.5 * logsnr_min))
+        return -2 * torch.log(torch.tan(t_min + t * (t_max - t_min)))
+
+    def logsnr_schedule_cosine_shifted(t, image_d, noise_d, logsnr_min, logsnr_max):
+        shift = 2 * math.log(noise_d / image_d)
+        return logsnr_schedule_cosine(t, logsnr_min - shift, logsnr_max - shift) + shift
+
+    def logsnr_schedule_cosine_interpolated(t, image_d, noise_d_low, noise_d_high, logsnr_min, logsnr_max):
+        logsnr_low = logsnr_schedule_cosine_shifted(t, image_d, noise_d_low, logsnr_min, logsnr_max)
+        logsnr_high = logsnr_schedule_cosine_shifted(t, image_d, noise_d_high, logsnr_min, logsnr_max)
+        return torch.lerp(logsnr_low, logsnr_high, t)
+
+    logsnr_min = -2 * math.log(min_value / sigma_data)
+    logsnr_max = -2 * math.log(max_value / sigma_data)
+    u = stratified_uniform(
+        shape, group=0, groups=1, dtype=dtype, device=device
+    )
+    logsnr = logsnr_schedule_cosine_interpolated(u, image_d, noise_d_low, noise_d_high, logsnr_min, logsnr_max)
+    return torch.exp(-logsnr / 2) * sigma_data
+
+min_value = 0.002
+max_value = 700
+image_d = 64
+noise_d_low = 32
+noise_d_high = 64
+sigma_data = 0.5
 
 class DummyDataset(Dataset):
     def __init__(self, num_samples=100000,):
@@ -950,14 +992,14 @@ def main():
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
                 # Sample a random timestep for each image
-                timesteps = torch.randint(
-                    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device)
-                timesteps = timesteps.long()
-
+                sigmas = rand_cosine_interpolated(shape=[bsz,], image_d=image_d, noise_d_low=noise_d_low, noise_d_high=noise_d_high, sigma_data=sigma_data, min_value=min_value, max_value=max_value).to(latents.device)
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
-                noisy_latents = noise_scheduler.add_noise(
-                    latents, noise, noise_scheduler.timesteps[timesteps.cpu()])
+                noisy_latents = latents + noise * sigmas
+                timesteps = torch.Tensor([0.25 * sigma.log() for sigma in sigmas])
+
+                inp_noisy_latents = noisy_latents / ((sigmas**2 + 1) ** 0.5)
+
                 # Get the text embedding for conditioning.
                 encoder_hidden_states = encode_image(
                     pixel_values[:, 0, :, :, :].float())
@@ -998,23 +1040,35 @@ def main():
                 # Concatenate the `conditional_latents` with the `noisy_latents`.
                 conditional_latents = conditional_latents.unsqueeze(
                     1).repeat(1, noisy_latents.shape[1], 1, 1, 1)
-                noisy_latents = torch.cat(
-                    [noisy_latents, conditional_latents], dim=2)
+                inp_noisy_latents = torch.cat(
+                    [inp_noisy_latents, conditional_latents], dim=2)
 
                 # Get the target for loss depending on the prediction type
-                if noise_scheduler.config.prediction_type == "epsilon":
-                    target = noise
-                elif noise_scheduler.config.prediction_type == "v_prediction":
-                    target = noise_scheduler.get_velocity(
-                        latents, noise, timesteps)
-                else:
-                    raise ValueError(
-                        f"Unknown prediction type {noise_scheduler.config.prediction_type}")
-
+                # if noise_scheduler.config.prediction_type == "epsilon":
+                #     target = latents  # we are computing loss against denoise latents
+                # elif noise_scheduler.config.prediction_type == "v_prediction":
+                #     target = noise_scheduler.get_velocity(
+                #         latents, noise, timesteps)
+                # else:
+                #     raise ValueError(
+                #         f"Unknown prediction type {noise_scheduler.config.prediction_type}")
+                
+                target = latents
                 model_pred = unet(
-                    noisy_latents, timesteps, encoder_hidden_states, added_time_ids=added_time_ids).sample
-                loss = F.mse_loss(model_pred.float(),
-                                  target.float(), reduction="mean")
+                    inp_noisy_latents, timesteps, encoder_hidden_states, added_time_ids=added_time_ids).sample
+
+                # Denoise the latents
+                c_out = -sigmas / ((sigmas**2 + 1)**0.5)
+                c_skip = 1 / (sigmas**2 + 1)
+                denoised_latents = model_pred * c_out + c_skip * noisy_latents
+                weighing = (1 + sigmas ** 2) * (sigmas**-2.0)
+
+                # MSE loss
+                loss = torch.mean(
+                    (weighing.float() * (denoised_latents.float() - target.float()) ** 2).reshape(target.shape[0], -1),
+                    dim=1,
+                )
+                loss = loss.mean()
 
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(
@@ -1111,12 +1165,14 @@ def main():
                                     load_image('/18940970966/diffusion_re/NEW_CODE/1.jpg').resize((512, 320)),
                                     height=320,
                                     width=512,
+                                    num_frames=16,
                                     decode_chunk_size=8,
                                     motion_bucket_id=127,
                                     fps=7,
+                                    noise_aug_strength=0.0,
                                     # generator=generator,
                                 ).frames[0]
-                                # draw bbox
+
                                 num_frames = args.num_frames
 
                                 out_file = os.path.join(
