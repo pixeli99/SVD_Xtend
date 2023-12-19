@@ -60,6 +60,7 @@ check_min_version("0.24.0.dev0")
 
 logger = get_logger(__name__, log_level="INFO")
 
+# copy from https://github.com/crowsonkb/k-diffusion.git
 def stratified_uniform(shape, group=0, groups=1, dtype=None, device=None):
     """Draws stratified samples from a uniform distribution."""
     if groups <= 0:
@@ -70,6 +71,7 @@ def stratified_uniform(shape, group=0, groups=1, dtype=None, device=None):
     offsets = torch.arange(group, n, groups, dtype=dtype, device=device)
     u = torch.rand(shape, dtype=dtype, device=device)
     return (offsets + u) / n
+
 
 def rand_cosine_interpolated(shape, image_d, noise_d_low, noise_d_high, sigma_data=1., min_value=1e-3, max_value=1e3, device='cpu', dtype=torch.float32):
     """Draws samples from an interpolated cosine timestep distribution (from simple diffusion)."""
@@ -84,8 +86,10 @@ def rand_cosine_interpolated(shape, image_d, noise_d_low, noise_d_high, sigma_da
         return logsnr_schedule_cosine(t, logsnr_min - shift, logsnr_max - shift) + shift
 
     def logsnr_schedule_cosine_interpolated(t, image_d, noise_d_low, noise_d_high, logsnr_min, logsnr_max):
-        logsnr_low = logsnr_schedule_cosine_shifted(t, image_d, noise_d_low, logsnr_min, logsnr_max)
-        logsnr_high = logsnr_schedule_cosine_shifted(t, image_d, noise_d_high, logsnr_min, logsnr_max)
+        logsnr_low = logsnr_schedule_cosine_shifted(
+            t, image_d, noise_d_low, logsnr_min, logsnr_max)
+        logsnr_high = logsnr_schedule_cosine_shifted(
+            t, image_d, noise_d_high, logsnr_min, logsnr_max)
         return torch.lerp(logsnr_low, logsnr_high, t)
 
     logsnr_min = -2 * math.log(min_value / sigma_data)
@@ -93,8 +97,10 @@ def rand_cosine_interpolated(shape, image_d, noise_d_low, noise_d_high, sigma_da
     u = stratified_uniform(
         shape, group=0, groups=1, dtype=dtype, device=device
     )
-    logsnr = logsnr_schedule_cosine_interpolated(u, image_d, noise_d_low, noise_d_high, logsnr_min, logsnr_max)
+    logsnr = logsnr_schedule_cosine_interpolated(
+        u, image_d, noise_d_low, noise_d_high, logsnr_min, logsnr_max)
     return torch.exp(-logsnr / 2) * sigma_data
+
 
 min_value = 0.002
 max_value = 700
@@ -102,6 +108,7 @@ image_d = 64
 noise_d_low = 32
 noise_d_high = 64
 sigma_data = 0.5
+
 
 class DummyDataset(Dataset):
     def __init__(self, num_samples=100000,):
@@ -112,7 +119,7 @@ class DummyDataset(Dataset):
         """
         self.num_samples = num_samples
         # Define the path to the folder containing video frames
-        self.base_folder = '/18940970966/diffusion_re/Track_Geo_Diffusion/bdd100k/images/track/train'
+        self.base_folder = 'bdd100k/images/track/train'
         self.folders = os.listdir(self.base_folder)
         self.channels = 3
 
@@ -126,7 +133,7 @@ class DummyDataset(Dataset):
 
         Returns:
             dict: A dictionary containing the 'pixel_values' tensor of shape (16, channels, 320, 512).
-        """    
+        """
         # Randomly select a folder (representing a video) from the base folder
         chosen_folder = random.choice(self.folders)
         folder_path = os.path.join(self.base_folder, chosen_folder)
@@ -136,7 +143,8 @@ class DummyDataset(Dataset):
 
         # Ensure the selected folder has at least 16 frames
         if len(frames) < 16:
-            raise ValueError(f"The selected folder '{chosen_folder}' contains fewer than 16 frames.")
+            raise ValueError(
+                f"The selected folder '{chosen_folder}' contains fewer than 16 frames.")
 
         # Randomly select a start index for frame sequence
         start_idx = random.randint(0, len(frames) - 16)
@@ -150,7 +158,7 @@ class DummyDataset(Dataset):
             frame_path = os.path.join(folder_path, frame_name)
             with Image.open(frame_path) as img:
                 # Resize the image and convert it to a tensor
-                img_resized = img.resize((512, 320))
+                img_resized = img.resize((512, 320)) # hard code here
                 img_tensor = torch.from_numpy(np.array(img_resized)).float()
 
                 # Normalize the image by scaling pixel values to [0, 1]
@@ -158,15 +166,19 @@ class DummyDataset(Dataset):
 
                 # Rearrange channels if necessary
                 if self.channels == 3:
-                    img_normalized = img_normalized.permute(2, 0, 1)  # For RGB images
+                    img_normalized = img_normalized.permute(
+                        2, 0, 1)  # For RGB images
                 elif self.channels == 1:
-                    img_normalized = img_normalized.mean(dim=2, keepdim=True)  # For grayscale images
+                    img_normalized = img_normalized.mean(
+                        dim=2, keepdim=True)  # For grayscale images
 
                 pixel_values[i] = img_normalized
         return {'pixel_values': pixel_values}
 
 # resizing utils
 # TODO: clean up later
+
+
 def _resize_with_antialiasing(input, size, interpolation="bicubic", align_corners=True):
     h, w = input.shape[-2:]
     factors = (h / size[0], w / size[1])
@@ -793,7 +805,6 @@ def main():
         optimizer_cls = bnb.optim.AdamW8bit
     else:
         optimizer_cls = torch.optim.AdamW
-    
 
     unet.requires_grad_(True)
     parameters_list = []
@@ -811,7 +822,7 @@ def main():
         weight_decay=args.adam_weight_decay,
         eps=args.adam_epsilon,
     )
-    
+
     # optimizer = optimizer_cls(
     #     unet.parameters(),
     #     lr=args.learning_rate,
@@ -912,7 +923,8 @@ def main():
             return_tensors="pt",
         ).pixel_values
 
-        pixel_values = pixel_values.to(device=accelerator.device, dtype=weight_dtype)
+        pixel_values = pixel_values.to(
+            device=accelerator.device, dtype=weight_dtype)
         image_embeddings = image_encoder(pixel_values).image_embeds
         return image_embeddings
 
@@ -992,11 +1004,13 @@ def main():
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
                 # Sample a random timestep for each image
-                sigmas = rand_cosine_interpolated(shape=[bsz,], image_d=image_d, noise_d_low=noise_d_low, noise_d_high=noise_d_high, sigma_data=sigma_data, min_value=min_value, max_value=max_value).to(latents.device)
+                sigmas = rand_cosine_interpolated(shape=[bsz,], image_d=image_d, noise_d_low=noise_d_low, noise_d_high=noise_d_high,
+                                                  sigma_data=sigma_data, min_value=min_value, max_value=max_value).to(latents.device)
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
                 noisy_latents = latents + noise * sigmas
-                timesteps = torch.Tensor([0.25 * sigma.log() for sigma in sigmas])
+                timesteps = torch.Tensor(
+                    [0.25 * sigma.log() for sigma in sigmas])
 
                 inp_noisy_latents = noisy_latents / ((sigmas**2 + 1) ** 0.5)
 
@@ -1007,7 +1021,7 @@ def main():
                 added_time_ids = _get_add_time_ids(
                     7,
                     127,
-                    0.0,
+                    0.0, # noise_aug_strength == 0.0
                     encoder_hidden_states.dtype,
                     bsz,
                 )
@@ -1052,7 +1066,7 @@ def main():
                 # else:
                 #     raise ValueError(
                 #         f"Unknown prediction type {noise_scheduler.config.prediction_type}")
-                
+
                 target = latents
                 model_pred = unet(
                     inp_noisy_latents, timesteps, encoder_hidden_states, added_time_ids=added_time_ids).sample
@@ -1065,7 +1079,8 @@ def main():
 
                 # MSE loss
                 loss = torch.mean(
-                    (weighing.float() * (denoised_latents.float() - target.float()) ** 2).reshape(target.shape[0], -1),
+                    (weighing.float() * (denoised_latents.float() -
+                     target.float()) ** 2).reshape(target.shape[0], -1),
                     dim=1,
                 )
                 loss = loss.mean()
@@ -1161,19 +1176,18 @@ def main():
                             str(accelerator.device).replace(":0", ""), enabled=accelerator.mixed_precision == "fp16"
                         ):
                             for val_img_idx in range(args.num_validation_images):
+                                num_frames = args.num_frames
                                 video_frames = pipeline(
-                                    load_image('/18940970966/diffusion_re/NEW_CODE/1.jpg').resize((512, 320)),
-                                    height=320,
-                                    width=512,
-                                    num_frames=16,
+                                    load_image('demo.jpg').resize((args.width, args.height)),
+                                    height=args.height,
+                                    width=args.width,
+                                    num_frames=num_frames,
                                     decode_chunk_size=8,
                                     motion_bucket_id=127,
                                     fps=7,
                                     noise_aug_strength=0.0,
                                     # generator=generator,
                                 ).frames[0]
-
-                                num_frames = args.num_frames
 
                                 out_file = os.path.join(
                                     val_save_dir,
