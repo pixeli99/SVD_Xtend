@@ -809,27 +809,27 @@ def main():
     unet.requires_grad_(True)
     parameters_list = []
 
-    for name, para in unet.named_parameters():
-        if 'temporal_transformer_block' in name and 'down_blocks' in name:
-            parameters_list.append(para)
-            para.requires_grad = True
-        else:
-            para.requires_grad = False
-    optimizer = optimizer_cls(
-        parameters_list,
-        lr=args.learning_rate,
-        betas=(args.adam_beta1, args.adam_beta2),
-        weight_decay=args.adam_weight_decay,
-        eps=args.adam_epsilon,
-    )
-
+    # for name, para in unet.named_parameters():
+    #     if 'temporal_transformer_block' in name and 'down_blocks' in name:
+    #         parameters_list.append(para)
+    #         para.requires_grad = True
+    #     else:
+    #         para.requires_grad = False
     # optimizer = optimizer_cls(
-    #     unet.parameters(),
+    #     parameters_list,
     #     lr=args.learning_rate,
     #     betas=(args.adam_beta1, args.adam_beta2),
     #     weight_decay=args.adam_weight_decay,
     #     eps=args.adam_epsilon,
     # )
+
+    optimizer = optimizer_cls(
+        unet.parameters(),
+        lr=args.learning_rate,
+        betas=(args.adam_beta1, args.adam_beta2),
+        weight_decay=args.adam_weight_decay,
+        eps=args.adam_epsilon,
+    )
 
     # check para
     if accelerator.is_main_process:
