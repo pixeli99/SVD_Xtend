@@ -10,6 +10,9 @@ generator=torch.manual_seed(111)
 | Init Image        | Before Fine-tuning |After Fine-tuning |
 |---------------|-----------------------------|-----------------------------|
 | ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/1587c4b5-c104-4d22-8d56-c86e8c716b06)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/18b5af34-d38f-4d19-8856-77895466d152)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/c464397e-aa05-4d8e-9563-3cc78ad04cb3)|
+| ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/903a30d0-01e5-4465-a7c7-7ab06e92e7ea)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/26d38418-b6fa-40a5-afa6-b278d088638f)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/a49264da-6ccf-48d7-914f-8b0fff9bc99e)|
+| ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/f7d10acb-1f8a-4394-8693-40af487b112e)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/579bed68-2b31-45d5-8cf2-a4e768fec126)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/eaffe1d5-999b-4d27-8d77-d8e8fd1cd380)|
+| ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/2d695363-1961-40ce-b87e-67bb41d6b178)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/2e525ede-474e-499a-9bc5-8f60700ca3fb)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/ec77f39f-653a-4fa7-8ac0-68f8512f9ddb)|
 
 ## Disclaimer
 
