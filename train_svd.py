@@ -1000,6 +1000,8 @@ def main():
                 )
                 latents = tensor_to_vae_latent(pixel_values, vae)
                 conditional_latents = latents[:, 0, :, :, :]
+                conditional_latents = conditional_latents / vae.config.scaling_factor
+        
                 # Sample noise that we'll add to the latents
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
