@@ -1012,8 +1012,8 @@ def main():
                 # (this is the forward diffusion process)
                 noisy_latents = latents + noise * sigmas
                 timesteps = torch.Tensor(
-                    [0.25 * sigma.log() for sigma in sigmas])
-
+                    [0.25 * sigma.log() for sigma in sigmas]).to(accelerator.device)
+ 
                 inp_noisy_latents = noisy_latents / ((sigmas**2 + 1) ** 0.5)
 
                 # Get the text embedding for conditioning.
