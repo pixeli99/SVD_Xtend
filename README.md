@@ -18,6 +18,11 @@ generator=torch.manual_seed(111)
 
 While the codebase is functional and provides an enhancement in video generation(maybe? 🤷), it's important to note that there are still some uncertainties regarding the finer details of its implementation.
 
+## TODO List
+
+- [ ] Support text2video
+- [ ] Support more conditional inputs, such as layout
+
 ## Contribution
 
 Feel free to fork this repository, submit pull requests, or open issues to discuss potential changes or report bugs. With your valuable input, we can continuously improve SVD_Xtend for the community.
