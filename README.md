@@ -14,6 +14,22 @@ generator=torch.manual_seed(111)
 | ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/2a761c41-d6b2-48b8-a63c-505780369484)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/579bed68-2b31-45d5-8cf2-a4e768fec126)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/eaffe1d5-999b-4d27-8d77-d8e8fd1cd380)|
 | ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/09619a6e-50a2-4aec-afb7-d34c071da425)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/2e525ede-474e-499a-9bc5-8f60700ca3fb)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/ec77f39f-653a-4fa7-8ac0-68f8512f9ddb)|
 
+## Training Configuration(on the BDD100K dataset)
+This training configuration is for reference only, I set all parameters of unet to be trainable during the training and adopted a learning rate of 1e-5.
+```bash
+accelerate launch train_svd.py \
+    --pretrained_model_name_or_path=/path/to/weight \
+    --per_gpu_batch_size=1 --gradient_accumulation_steps=1 \
+    --max_train_steps=50000 \
+    --width=512 \
+    --height=320 \
+    --checkpointing_steps=1000 --checkpoints_total_limit=1 \
+    --learning_rate=1e-5 --lr_warmup_steps=0 \
+    --seed=123 \
+    --mixed_precision="fp16" \
+    --validation_steps=200
+```
+
 ## Disclaimer
 
 While the codebase is functional and provides an enhancement in video generation(maybe? 🤷), it's important to note that there are still some uncertainties regarding the finer details of its implementation.
