@@ -1010,6 +1010,7 @@ def main():
                                                   sigma_data=sigma_data, min_value=min_value, max_value=max_value).to(latents.device)
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
+                sigmas = sigmas[:, None, None, None, None]
                 noisy_latents = latents + noise * sigmas
                 timesteps = torch.Tensor(
                     [0.25 * sigma.log() for sigma in sigmas]).to(accelerator.device)
@@ -1040,8 +1041,7 @@ def main():
                     # Final text conditioning.
                     null_conditioning = torch.zeros_like(encoder_hidden_states)
                     encoder_hidden_states = torch.where(
-                        prompt_mask, null_conditioning, encoder_hidden_states)
-
+                        prompt_mask, null_conditioning.unsqueeze(1), encoder_hidden_states.unsqueeze(1))
                     # Sample masks for the original images.
                     image_mask_dtype = conditional_latents.dtype
                     image_mask = 1 - (
