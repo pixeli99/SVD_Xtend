@@ -119,7 +119,7 @@ class DummyDataset(Dataset):
         """
         self.num_samples = num_samples
         # Define the path to the folder containing video frames
-        self.base_folder = 'bdd100k/images/track/train'
+        self.base_folder = 'bdd100k/images/track/mini'
         self.folders = os.listdir(self.base_folder)
         self.channels = 3
 
@@ -142,16 +142,16 @@ class DummyDataset(Dataset):
         frames.sort()
 
         # Ensure the selected folder has at least 16 frames
-        if len(frames) < 16:
+        if len(frames) < 24:
             raise ValueError(
                 f"The selected folder '{chosen_folder}' contains fewer than 16 frames.")
 
         # Randomly select a start index for frame sequence
-        start_idx = random.randint(0, len(frames) - 16)
-        selected_frames = frames[start_idx:start_idx + 16]
+        start_idx = random.randint(0, len(frames) - 24)
+        selected_frames = frames[start_idx:start_idx + 24]
 
         # Initialize a tensor to store the pixel values
-        pixel_values = torch.empty((16, self.channels, 320, 512))
+        pixel_values = torch.empty((24, self.channels, 320, 512))
 
         # Load and process each frame
         for i, frame_name in enumerate(selected_frames):
@@ -161,8 +161,8 @@ class DummyDataset(Dataset):
                 img_resized = img.resize((512, 320)) # hard code here
                 img_tensor = torch.from_numpy(np.array(img_resized)).float()
 
-                # Normalize the image by scaling pixel values to [0, 1]
-                img_normalized = img_tensor / 255.0
+                # Normalize the image by scaling pixel values to [-1, 1]
+                img_normalized = img_tensor / 127.5 - 1
 
                 # Rearrange channels if necessary
                 if self.channels == 3:
@@ -177,8 +177,6 @@ class DummyDataset(Dataset):
 
 # resizing utils
 # TODO: clean up later
-
-
 def _resize_with_antialiasing(input, size, interpolation="bicubic", align_corners=True):
     h, w = input.shape[-2:]
     factors = (h / size[0], w / size[1])
@@ -360,7 +358,7 @@ def parse_args():
     parser.add_argument(
         "--num_frames",
         type=int,
-        default=16,
+        default=24,
     )
     parser.add_argument(
         "--width",
@@ -809,6 +807,8 @@ def main():
     unet.requires_grad_(True)
     parameters_list = []
 
+    # Customize the parameters that need to be trained; if necessary, you can uncomment them yourself.
+
     # for name, para in unet.named_parameters():
     #     if 'temporal_transformer_block' in name and 'down_blocks' in name:
     #         parameters_list.append(para)
@@ -831,7 +831,7 @@ def main():
         eps=args.adam_epsilon,
     )
 
-    # check para
+    # check parameters
     if accelerator.is_main_process:
         rec_txt1 = open('rec_para.txt', 'w')
         rec_txt2 = open('rec_para_train.txt', 'w')
@@ -842,6 +842,7 @@ def main():
                 rec_txt2.write(f'{name}\n')
         rec_txt1.close()
         rec_txt2.close()
+
     # DataLoaders creation:
     args.global_batch_size = args.per_gpu_batch_size * accelerator.num_processes
 
@@ -909,8 +910,9 @@ def main():
     first_epoch = 0
 
     def encode_image(pixel_values):
-        pixel_values = pixel_values * 2.0 - 1.0
+        # pixel: [-1, 1]
         pixel_values = _resize_with_antialiasing(pixel_values, (224, 224))
+        # We unnormalize it after resizing.
         pixel_values = (pixel_values + 1.0) / 2.0
 
         # Normalize the image with for CLIP input
@@ -992,9 +994,7 @@ def main():
                 continue
 
             with accelerator.accumulate(unet):
-                # We want to learn the denoising process w.r.t the edited images which
-                # are conditioned on the original image (which was edited) and the edit instruction.
-                # So, first, convert images to latent space.
+                # first, convert images to latent space.
                 pixel_values = batch["pixel_values"].to(weight_dtype).to(
                     accelerator.device, non_blocking=True
                 )
@@ -1021,9 +1021,12 @@ def main():
                 encoder_hidden_states = encode_image(
                     pixel_values[:, 0, :, :, :].float())
 
+                # Here I input a fixed numerical value for 'motion_bucket_id', which is not reasonable.
+                # However, I am unable to fully align with the calculation method of the motion score,
+                # so I adopted this approach. The same applies to the 'fps' (frames per second).
                 added_time_ids = _get_add_time_ids(
                     7,
-                    127,
+                    127, # motion_bucket_id = 127
                     0.0, # noise_aug_strength == 0.0
                     encoder_hidden_states.dtype,
                     bsz,
@@ -1059,16 +1062,7 @@ def main():
                 inp_noisy_latents = torch.cat(
                     [inp_noisy_latents, conditional_latents], dim=2)
 
-                # Get the target for loss depending on the prediction type
-                # if noise_scheduler.config.prediction_type == "epsilon":
-                #     target = latents  # we are computing loss against denoise latents
-                # elif noise_scheduler.config.prediction_type == "v_prediction":
-                #     target = noise_scheduler.get_velocity(
-                #         latents, noise, timesteps)
-                # else:
-                #     raise ValueError(
-                #         f"Unknown prediction type {noise_scheduler.config.prediction_type}")
-
+                # check https://arxiv.org/abs/2206.00364(the EDM-framework) for more details.
                 target = latents
                 model_pred = unet(
                     inp_noisy_latents, timesteps, encoder_hidden_states, added_time_ids=added_time_ids).sample
