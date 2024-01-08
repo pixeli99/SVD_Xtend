@@ -1,10 +1,12 @@
 import os
 import torch
-from PIL import Image
+from PIL import Image, ImageFile
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 
+from diffusers.utils.torch_utils import randn_tensor
 
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 class AestheticDataset(torch.utils.data.Dataset):
 
     def __init__(self, root_dir):
@@ -39,7 +41,8 @@ class AestheticDataset(torch.utils.data.Dataset):
         # Load text prompt
         with open(text_path, 'r', encoding='utf-8') as f:
             text_prompt = f.read().strip()
-        return {"pixel_values": pixel_values.unsqueeze(0), "text_prompt": text_prompt}
+        condition = (pixel_values + randn_tensor(pixel_values.shape) * 0.2)
+        return {"pixel_values": pixel_values.unsqueeze(0), "text_prompt": text_prompt, "condition": condition.unsqueeze(0)}
 
 
 def visualize_data(dataloader):

@@ -725,8 +725,14 @@ def main():
     unet.requires_grad_(True)
     parameters_list = []
 
+    # for name, para in unet.named_parameters():
+    #     if 'embedding_projection' in name or 'conv_in' in name:
+    #         parameters_list.append(para)
+    #         para.requires_grad = True
+    #     else:
+    #         para.requires_grad = False
     for name, para in unet.named_parameters():
-        if 'embedding_projection' in name or 'conv_in' in name:
+        if 'temporal' not in name:
             parameters_list.append(para)
             para.requires_grad = True
         else:
@@ -892,9 +898,13 @@ def main():
                 pixel_values = batch["pixel_values"].to(weight_dtype).to(
                     accelerator.device, non_blocking=True
                 )
+                cond_values = batch["condition"].to(weight_dtype).to(
+                    accelerator.device, non_blocking=True
+                )
                 latents = tensor_to_vae_latent(pixel_values, vae)
                 # negative_image_latents
-                conditional_latents = torch.zeros_like(latents[:, 0, :, :, :])
+                conditional_latents = tensor_to_vae_latent(cond_values, vae)[:, 0, :, :, :]
+                conditional_latents = conditional_latents / vae.config.scaling_factor
         
                 # Sample noise that we'll add to the latents
                 noise = torch.randn_like(latents)
@@ -917,7 +927,7 @@ def main():
                 added_time_ids = _get_add_time_ids(
                     7,
                     127,
-                    0.0, # noise_aug_strength == 0.0
+                    0.0, # noise_aug_strength == 0.
                     encoder_hidden_states.dtype,
                     bsz,
                 )
