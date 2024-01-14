@@ -1,6 +1,6 @@
 # SVD_Xtend
 
-🎨✨ **Stable Video Diffusion Training Code 🚀**
+**Stable Video Diffusion Training Code 🚀**
 
 ## Comparison
 ```python
@@ -14,6 +14,18 @@ generator=torch.manual_seed(111)
 | ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/2a761c41-d6b2-48b8-a63c-505780369484)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/579bed68-2b31-45d5-8cf2-a4e768fec126)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/eaffe1d5-999b-4d27-8d77-d8e8fd1cd380)|
 | ![demo](https://github.com/pixeli99/SVD_Xtend/assets/46072190/09619a6e-50a2-4aec-afb7-d34c071da425)    | ![ori](https://github.com/pixeli99/SVD_Xtend/assets/46072190/2e525ede-474e-499a-9bc5-8f60700ca3fb)   | ![ft](https://github.com/pixeli99/SVD_Xtend/assets/46072190/ec77f39f-653a-4fa7-8ac0-68f8512f9ddb)|
 
+## Video Data Processing
+Note that BDD100K is a driving video/image dataset, but this is not a necessity for training. Any video can be used to initiate your training. Please refer to the `DummyDataset` data reading logic. In short, you only need to modify `self.base_folder`. Then arrange your videos in the following file structure:
+```bash
+self.base_folder
+    ├── video_name1
+    │   ├── video_frame1
+    │   ├── video_frame2
+    │   ...
+    ├── video_name2
+    │   ├── video_frame1
+        ├── ...
+```
 ## Training Configuration(on the BDD100K dataset)
 This training configuration is for reference only, I set all parameters of unet to be trainable during the training and adopted a learning rate of 1e-5.
 ```bash
@@ -36,7 +48,7 @@ While the codebase is functional and provides an enhancement in video generation
 
 ## TODO List
 
-- [ ] Support text2video
+- [ ] Support text2video (WIP)
 - [ ] Support more conditional inputs, such as layout
 
 ## Contribution
