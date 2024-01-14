@@ -34,14 +34,17 @@ class AestheticDataset(torch.utils.data.Dataset):
         # Load and transform image
         image = Image.open(image_path).convert("RGB")
         transform = transforms.Compose([
-            transforms.Resize((512, 512)),
+            transforms.Resize((320, 576)),
             transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ])
         pixel_values = transform(image)
         # Load text prompt
         with open(text_path, 'r', encoding='utf-8') as f:
             text_prompt = f.read().strip()
-        condition = (pixel_values + randn_tensor(pixel_values.shape) * 0.2)
+        # Create condition
+        condition = (pixel_values + torch.randn_like(pixel_values) * 0.02)
+        
         return {"pixel_values": pixel_values.unsqueeze(0), "text_prompt": text_prompt, "condition": condition.unsqueeze(0)}
 
 

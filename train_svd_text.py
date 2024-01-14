@@ -41,6 +41,7 @@ from huggingface_hub import create_repo, upload_folder
 from packaging import version
 from tqdm.auto import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
+from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 import torchvision.transforms as transforms
 from einops import rearrange
 
@@ -56,7 +57,8 @@ from diffusers.utils.import_utils import is_xformers_available
 from datasets import AestheticDataset
 from xtend import EmbeddingProjection
 from pipelines.pipeline_stable_video_diffusion_text import StableVideoDiffusionPipeline
-
+# from diffusers import StableVideoDiffusionPipeline
+# from train_svd import _resize_with_antialiasing
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.24.0.dev0")
 
@@ -263,17 +265,17 @@ def parse_args():
     parser.add_argument(
         "--num_frames",
         type=int,
-        default=16,
+        default=25,
     )
     parser.add_argument(
         "--width",
         type=int,
-        default=512,
+        default=1024,
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=320,
+        default=576,
     )
     parser.add_argument(
         "--num_validation_images",
@@ -595,11 +597,17 @@ def main():
     noise_scheduler = EulerDiscreteScheduler.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="scheduler")
     tokenizer = CLIPTokenizer.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
+        'laion/CLIP-ViT-H-14-laion2B-s32B-b79K'
     )
     text_encoder = CLIPTextModel.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision
+        'laion/CLIP-ViT-H-14-laion2B-s32B-b79K'
     )
+    # feature_extractor = CLIPImageProcessor.from_pretrained(
+    #     'laion/CLIP-ViT-H-14-laion2B-s32B-b79K'
+    # )
+    # image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+    #     'laion/CLIP-ViT-H-14-laion2B-s32B-b79K'
+    # )
     vae = AutoencoderKLTemporalDecoder.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision, variant="fp16")
     unet = UNetSpatioTemporalConditionModel.from_pretrained(
@@ -609,21 +617,22 @@ def main():
         variant="fp16",
     )
     unet.embedding_projection = EmbeddingProjection(
-            in_features=768, hidden_size=1024,
+            in_features=1024, hidden_size=1024,
     )
     
-    in_channels = 4
-    out_channels = unet.conv_in.out_channels
-    unet.register_to_config(in_channels=in_channels)
-    with torch.no_grad():
-        new_conv_in = torch.nn.Conv2d(
-            in_channels, out_channels, unet.conv_in.kernel_size, unet.conv_in.stride, unet.conv_in.padding
-        )
-        new_conv_in.weight.zero_()
-        new_conv_in.weight[:, :4, :, :].copy_(unet.conv_in.weight[:, :4, :, :])
-        unet.conv_in = new_conv_in
+    # in_channels = 4
+    # out_channels = unet.conv_in.out_channels
+    # unet.register_to_config(in_channels=in_channels)
+    # with torch.no_grad():
+    #     new_conv_in = torch.nn.Conv2d(
+    #         in_channels, out_channels, unet.conv_in.kernel_size, unet.conv_in.stride, unet.conv_in.padding
+    #     )
+    #     new_conv_in.weight.zero_()
+    #     new_conv_in.weight[:, :4, :, :].copy_(unet.conv_in.weight[:, :4, :, :])
+    #     unet.conv_in = new_conv_in
     # Freeze vae and image_encoder
     vae.requires_grad_(False)
+    # image_encoder.requires_grad_(False)
     text_encoder.requires_grad_(False)
     unet.requires_grad_(False)
 
@@ -637,6 +646,7 @@ def main():
 
     # Move image_encoder and vae to gpu and cast to weight_dtype
     text_encoder.to(accelerator.device, dtype=weight_dtype)
+    # image_encoder.to(accelerator.device, dtype=weight_dtype)
     vae.to(accelerator.device, dtype=weight_dtype)
     # unet.to(accelerator.device, dtype=weight_dtype)
 
@@ -725,14 +735,8 @@ def main():
     unet.requires_grad_(True)
     parameters_list = []
 
-    # for name, para in unet.named_parameters():
-    #     if 'embedding_projection' in name or 'conv_in' in name:
-    #         parameters_list.append(para)
-    #         para.requires_grad = True
-    #     else:
-    #         para.requires_grad = False
     for name, para in unet.named_parameters():
-        if 'temporal' not in name:
+        if 'embedding_projection' in name: # or 'attn2.to_k' in name or 'attn2.to_v' in name:
             parameters_list.append(para)
             para.requires_grad = True
         else:
@@ -828,6 +832,27 @@ def main():
     global_step = 0
     first_epoch = 0
 
+    def encode_image(pixel_values):
+        # pixel: [-1, 1]
+        pixel_values = _resize_with_antialiasing(pixel_values, (224, 224))
+        # We unnormalize it after resizing.
+        pixel_values = (pixel_values + 1.0) / 2.0
+
+        # Normalize the image with for CLIP input
+        pixel_values = feature_extractor(
+            images=pixel_values,
+            do_normalize=True,
+            do_center_crop=False,
+            do_resize=False,
+            do_rescale=False,
+            return_tensors="pt",
+        ).pixel_values
+
+        pixel_values = pixel_values.to(
+            device=accelerator.device, dtype=weight_dtype)
+        image_embeddings = image_encoder(pixel_values).image_embeds
+        return image_embeddings
+
     def _get_add_time_ids(
         fps,
         motion_bucket_id,
@@ -922,12 +947,14 @@ def main():
                 inp_noisy_latents = noisy_latents / ((sigmas**2 + 1) ** 0.5)
 
                 # Get the text embedding for conditioning.
-                encoder_hidden_states = text_encoder(tokenize_captions(batch["text_prompt"]).to(accelerator.device))[0]
+                encoder_hidden_states = text_encoder(tokenize_captions(batch["text_prompt"]).to(accelerator.device)).pooler_output.unsqueeze(1)
+                # encoder_hidden_states = encode_image(
+                #     pixel_values[:, 0, :, :, :].float())
 
                 added_time_ids = _get_add_time_ids(
-                    7,
-                    127,
-                    0.0, # noise_aug_strength == 0.
+                    7, # fps
+                    0, # motion
+                    0.02, # noise_aug_strength == 0.02
                     encoder_hidden_states.dtype,
                     bsz,
                 )
@@ -942,7 +969,10 @@ def main():
                     prompt_mask = random_p < 2 * args.conditioning_dropout_prob
                     prompt_mask = prompt_mask.reshape(bsz, 1, 1)
                     # Final text conditioning.
-                    null_conditioning = text_encoder(tokenize_captions([""]).to(accelerator.device))[0]
+                    # null_conditioning = torch.zeros_like(encoder_hidden_states)
+                    # encoder_hidden_states = torch.where(
+                    #     prompt_mask, null_conditioning.unsqueeze(1), encoder_hidden_states.unsqueeze(1))
+                    null_conditioning = text_encoder(tokenize_captions([""]).to(accelerator.device)).pooler_output.unsqueeze(1)
                     encoder_hidden_states = torch.where(prompt_mask, null_conditioning, encoder_hidden_states)
 
                     # Sample masks for the original images.
@@ -959,10 +989,12 @@ def main():
                 # Concatenate the `conditional_latents` with the `noisy_latents`.
                 conditional_latents = conditional_latents.unsqueeze(
                     1).repeat(1, noisy_latents.shape[1], 1, 1, 1)
-                # inp_noisy_latents = torch.cat(
-                #     [inp_noisy_latents, conditional_latents], dim=2)
-
-                target = latents
+                inp_noisy_latents = torch.cat(
+                    [inp_noisy_latents, conditional_latents], dim=2)
+                # torch.Size([1, 1, 8, 40, 72])
+                inp_noisy_latents = inp_noisy_latents.repeat(1, args.num_frames, 1, 1, 1)
+                target = latents.repeat(1, args.num_frames, 1, 1, 1)
+                # for image training
                 encoder_hidden_states = unet.module.embedding_projection(encoder_hidden_states.float()).to(encoder_hidden_states)
                 model_pred = unet(
                     inp_noisy_latents,
@@ -1058,6 +1090,8 @@ def main():
                             text_encoder=accelerator.unwrap_model(
                                 text_encoder),
                             tokenizer=tokenizer,
+                            # image_encoder=accelerator.unwrap_model(
+                            #     image_encoder),
                             vae=accelerator.unwrap_model(vae),
                             revision=args.revision,
                             torch_dtype=weight_dtype,
@@ -1084,9 +1118,9 @@ def main():
                                     width=args.width,
                                     num_frames=num_frames,
                                     decode_chunk_size=8,
-                                    motion_bucket_id=127,
-                                    fps=7,
-                                    noise_aug_strength=0.0,
+                                    motion_bucket_id=0,
+                                    fps=7.0,
+                                    noise_aug_strength=0.02,
                                     # generator=generator,
                                 ).frames[0]
 

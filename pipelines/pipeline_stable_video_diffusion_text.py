@@ -189,22 +189,8 @@ class StableVideoDiffusionPipeline(DiffusionPipeline):
             else:
                 attention_mask = None
 
-            if clip_skip is None:
-                prompt_embeds = self.text_encoder(text_input_ids.to(device), attention_mask=attention_mask)
-                prompt_embeds = prompt_embeds[0]
-            else:
-                prompt_embeds = self.text_encoder(
-                    text_input_ids.to(device), attention_mask=attention_mask, output_hidden_states=True
-                )
-                # Access the `hidden_states` first, that contains a tuple of
-                # all the hidden states from the encoder layers. Then index into
-                # the tuple to access the hidden states from the desired layer.
-                prompt_embeds = prompt_embeds[-1][-(clip_skip + 1)]
-                # We also need to apply the final LayerNorm here to not mess with the
-                # representations. The `last_hidden_states` that we typically use for
-                # obtaining the final prompt representations passes through the LayerNorm
-                # layer.
-                prompt_embeds = self.text_encoder.text_model.final_layer_norm(prompt_embeds)
+            prompt_embeds = self.text_encoder(text_input_ids.to(device), attention_mask=attention_mask)
+            prompt_embeds = prompt_embeds[1].unsqueeze(1)
 
         if self.text_encoder is not None:
             prompt_embeds_dtype = self.text_encoder.dtype
@@ -259,7 +245,7 @@ class StableVideoDiffusionPipeline(DiffusionPipeline):
                 uncond_input.input_ids.to(device),
                 attention_mask=attention_mask,
             )
-            negative_prompt_embeds = negative_prompt_embeds[0]
+            negative_prompt_embeds = negative_prompt_embeds[1].unsqueeze(1)
 
         if do_classifier_free_guidance:
             # duplicate unconditional embeddings for each generation per prompt, using mps friendly method
@@ -269,7 +255,7 @@ class StableVideoDiffusionPipeline(DiffusionPipeline):
 
             negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)
             negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
-
+        print(prompt_embeds.shape, negative_prompt_embeds.shape)
         return prompt_embeds, negative_prompt_embeds
     
     def _encode_vae_image(
@@ -626,8 +612,7 @@ class StableVideoDiffusionPipeline(DiffusionPipeline):
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                 # Concatenate image_latents over channels dimention
-                # latent_model_input = torch.cat([latent_model_input, image_latents], dim=2)
-
+                latent_model_input = torch.cat([latent_model_input, image_latents], dim=2)
                 # predict the noise residual
                 noise_pred = self.unet(
                     latent_model_input,
