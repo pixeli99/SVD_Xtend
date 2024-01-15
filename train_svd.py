@@ -101,17 +101,21 @@ def rand_cosine_interpolated(shape, image_d, noise_d_low, noise_d_high, sigma_da
         u, image_d, noise_d_low, noise_d_high, logsnr_min, logsnr_max)
     return torch.exp(-logsnr / 2) * sigma_data
 
+def rand_log_normal(shape, loc=0., scale=1., device='cpu', dtype=torch.float32):
+    """Draws samples from an lognormal distribution."""
+    u = torch.rand(shape, dtype=dtype, device=device) * (1 - 2e-7) + 1e-7
+    return torch.distributions.Normal(loc, scale).icdf(u).exp()
 
-min_value = 0.002
-max_value = 700
-image_d = 64
-noise_d_low = 32
-noise_d_high = 64
-sigma_data = 0.5
+# min_value = 0.002
+# max_value = 700
+# image_d = 64
+# noise_d_low = 32
+# noise_d_high = 64
+# sigma_data = 0.5
 
 
 class DummyDataset(Dataset):
-    def __init__(self, num_samples=100000,):
+    def __init__(self, num_samples=100000, width=1024, height=576, sample_frames=25):
         """
         Args:
             num_samples (int): Number of samples in the dataset.
@@ -122,6 +126,9 @@ class DummyDataset(Dataset):
         self.base_folder = 'bdd100k/images/track/mini'
         self.folders = os.listdir(self.base_folder)
         self.channels = 3
+        self.width = width
+        self.height = height
+        self.sample_frames = sample_frames
 
     def __len__(self):
         return self.num_samples
@@ -141,24 +148,24 @@ class DummyDataset(Dataset):
         # Sort the frames by name
         frames.sort()
 
-        # Ensure the selected folder has at least 16 frames
-        if len(frames) < 24:
+        # Ensure the selected folder has at least `sample_frames`` frames
+        if len(frames) < self.sample_frames:
             raise ValueError(
-                f"The selected folder '{chosen_folder}' contains fewer than 16 frames.")
+                f"The selected folder '{chosen_folder}' contains fewer than `{self.sample_frames}` frames.")
 
         # Randomly select a start index for frame sequence
-        start_idx = random.randint(0, len(frames) - 24)
-        selected_frames = frames[start_idx:start_idx + 24]
+        start_idx = random.randint(0, len(frames) - self.sample_frames)
+        selected_frames = frames[start_idx:start_idx + self.sample_frames]
 
         # Initialize a tensor to store the pixel values
-        pixel_values = torch.empty((24, self.channels, 320, 512))
+        pixel_values = torch.empty((self.sample_frames, self.channels, self.height, self.width))
 
         # Load and process each frame
         for i, frame_name in enumerate(selected_frames):
             frame_path = os.path.join(folder_path, frame_name)
             with Image.open(frame_path) as img:
                 # Resize the image and convert it to a tensor
-                img_resized = img.resize((512, 320)) # hard code here
+                img_resized = img.resize((self.width, self.height))
                 img_tensor = torch.from_numpy(np.array(img_resized)).float()
 
                 # Normalize the image by scaling pixel values to [-1, 1]
@@ -358,17 +365,17 @@ def parse_args():
     parser.add_argument(
         "--num_frames",
         type=int,
-        default=24,
+        default=25,
     )
     parser.add_argument(
         "--width",
         type=int,
-        default=512,
+        default=1024,
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=320,
+        default=576,
     )
     parser.add_argument(
         "--num_validation_images",
@@ -809,27 +816,27 @@ def main():
 
     # Customize the parameters that need to be trained; if necessary, you can uncomment them yourself.
 
-    # for name, para in unet.named_parameters():
-    #     if 'temporal_transformer_block' in name and 'down_blocks' in name:
-    #         parameters_list.append(para)
-    #         para.requires_grad = True
-    #     else:
-    #         para.requires_grad = False
-    # optimizer = optimizer_cls(
-    #     parameters_list,
-    #     lr=args.learning_rate,
-    #     betas=(args.adam_beta1, args.adam_beta2),
-    #     weight_decay=args.adam_weight_decay,
-    #     eps=args.adam_epsilon,
-    # )
-
+    for name, para in unet.named_parameters():
+        if 'temporal_transformer_block' in name:
+            parameters_list.append(para)
+            para.requires_grad = True
+        else:
+            para.requires_grad = False
     optimizer = optimizer_cls(
-        unet.parameters(),
+        parameters_list,
         lr=args.learning_rate,
         betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay,
         eps=args.adam_epsilon,
     )
+
+    # optimizer = optimizer_cls(
+    #     unet.parameters(),
+    #     lr=args.learning_rate,
+    #     betas=(args.adam_beta1, args.adam_beta2),
+    #     weight_decay=args.adam_weight_decay,
+    #     eps=args.adam_epsilon,
+    # )
 
     # check parameters
     if accelerator.is_main_process:
@@ -846,7 +853,7 @@ def main():
     # DataLoaders creation:
     args.global_batch_size = args.per_gpu_batch_size * accelerator.num_processes
 
-    train_dataset = DummyDataset()
+    train_dataset = DummyDataset(width=args.width, height=args.height, sample_frames=args.num_frames)
     sampler = RandomSampler(train_dataset)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -998,16 +1005,24 @@ def main():
                 pixel_values = batch["pixel_values"].to(weight_dtype).to(
                     accelerator.device, non_blocking=True
                 )
+                conditional_pixel_values = pixel_values[:, 0:1, :, :, :]
+
                 latents = tensor_to_vae_latent(pixel_values, vae)
-                conditional_latents = latents[:, 0, :, :, :]
-                conditional_latents = conditional_latents / vae.config.scaling_factor
-        
+
                 # Sample noise that we'll add to the latents
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
+
+                cond_sigmas = rand_log_normal(shape=[bsz,], loc=-3.0, scale=0.5).to(latents)
+                cond_sigmas = cond_sigmas[:, None, None, None, None]
+                conditional_pixel_values = \
+                    torch.randn_like(conditional_pixel_values) * cond_sigmas + conditional_pixel_values
+                conditional_latents = tensor_to_vae_latent(conditional_pixel_values, vae)[:, 0, :, :, :]
+                conditional_latents = conditional_latents / vae.config.scaling_factor
+
                 # Sample a random timestep for each image
-                sigmas = rand_cosine_interpolated(shape=[bsz,], image_d=image_d, noise_d_low=noise_d_low, noise_d_high=noise_d_high,
-                                                  sigma_data=sigma_data, min_value=min_value, max_value=max_value).to(latents.device)
+                # P_mean=0.7 P_std=1.6
+                sigmas = rand_log_normal(shape=[bsz,], loc=0.7, scale=1.6).to(latents.device)
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
                 sigmas = sigmas[:, None, None, None, None]
