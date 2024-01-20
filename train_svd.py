@@ -1014,6 +1014,7 @@ def main():
                 bsz = latents.shape[0]
 
                 cond_sigmas = rand_log_normal(shape=[bsz,], loc=-3.0, scale=0.5).to(latents)
+                noise_aug_strength = cond_sigmas[0] # TODO: support batch > 1
                 cond_sigmas = cond_sigmas[:, None, None, None, None]
                 conditional_pixel_values = \
                     torch.randn_like(conditional_pixel_values) * cond_sigmas + conditional_pixel_values
@@ -1040,9 +1041,9 @@ def main():
                 # However, I am unable to fully align with the calculation method of the motion score,
                 # so I adopted this approach. The same applies to the 'fps' (frames per second).
                 added_time_ids = _get_add_time_ids(
-                    7,
-                    127, # motion_bucket_id = 127
-                    0.0, # noise_aug_strength == 0.0
+                    7, # fixed
+                    127, # motion_bucket_id = 127, fixed
+                    noise_aug_strength, # noise_aug_strength == cond_sigmas
                     encoder_hidden_states.dtype,
                     bsz,
                 )
@@ -1196,7 +1197,7 @@ def main():
                                     decode_chunk_size=8,
                                     motion_bucket_id=127,
                                     fps=7,
-                                    noise_aug_strength=0.0,
+                                    noise_aug_strength=0.02,
                                     # generator=generator,
                                 ).frames[0]
 
