@@ -1,6 +1,11 @@
 # SVD_Xtend
 
 **Stable Video Diffusion Training Code 🚀**
+## Tracklet2Video
+We have attempted to incorporate layout control on top of img2video, which makes the motion of objects more controllable, similar to what is demonstrated in the image below. The code and weights will be updated soon.
+| Init Image        | Gen Video |
+|---------------|-----------------------------|
+| ![demo]([https://github.com/pixeli99/SVD_Xtend/assets/46072190/1587c4b5-c104-4d22-8d56-c86e8c716b06](https://github.com/pixeli99/SVD_Xtend/assets/46072190/e705b4bc-143d-4b56-ac52-df7a728e1731))    | ![gen]([https://github.com/pixeli99/SVD_Xtend/assets/46072190/18b5af34-d38f-4d19-8856-77895466d152](https://github.com/pixeli99/SVD_Xtend/assets/46072190/35207fb6-343f-44aa-bef0-58d0fc7bd2c1))   |
 
 ## Comparison
 ```python
