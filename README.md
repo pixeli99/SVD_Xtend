@@ -1,4 +1,8 @@
-# SVD_Xtend
+<div align="center">
+  <img src="./.asset/favicon.png" width="30%">
+</div>
+
+# SVD Xtend
 
 **Stable Video Diffusion Training Code and Extensions 🚀**
 
@@ -60,6 +64,10 @@ It should be noted that we use a resolution of `512*320` for SVD to generate vid
 | ![demo1](https://github.com/pixeli99/SVD_Xtend/assets/46072190/e705b4bc-143d-4b56-ac52-df7a728e1731)    | ![svd1](https://github.com/pixeli99/SVD_Xtend/assets/46072190/6d6a44ef-3587-43d9-a078-1f8f4d293097)   |  ![gen1](https://github.com/pixeli99/SVD_Xtend/assets/46072190/35207fb6-343f-44aa-bef0-58d0fc7bd2c1)   |
 | ![demo2](https://github.com/pixeli99/SVD_Xtend/assets/46072190/7fe80f97-8a51-457a-b4d8-e20d14f9669e) | ![svd2](https://github.com/pixeli99/SVD_Xtend/assets/46072190/3d87df43-afc8-4917-aaa7-2c432d2cc6f6)   |  ![gen2](https://github.com/pixeli99/SVD_Xtend/assets/46072190/91a16c1d-02c9-4379-8d4a-8fd58f9f0913)   |
 
+### Methods
+
+We have utilized the `Self-Tracking` training from [Boximator](https://arxiv.org/abs/2402.01566) and the `Instance-Enhancer` from [TrackDiffusion](https://arxiv.org/abs/2312.00651).
+For more details, please refer to the paper.
 
 ## :label: TODO List
 
