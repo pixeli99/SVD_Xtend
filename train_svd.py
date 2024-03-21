@@ -1185,7 +1185,7 @@ def main():
                             os.makedirs(val_save_dir)
 
                         with torch.autocast(
-                            str(accelerator.device).replace(":0", ""), enabled=accelerator.mixed_precision == "fp16"
+                            str(accelerator.device).replace(":0", ""), enabled=accelerator.mixed_precision != "no"
                         ):
                             for val_img_idx in range(args.num_validation_images):
                                 num_frames = args.num_frames
