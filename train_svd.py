@@ -114,8 +114,23 @@ def rand_log_normal(shape, loc=0., scale=1., device='cpu', dtype=torch.float32):
 # sigma_data = 0.5
 
 
-class DummyDataset(Dataset):
-    def __init__(self, num_samples=100000, width=1024, height=576, sample_frames=25):
+
+def get_video_frames(video_path):
+    cap = cv2.VideoCapture(video_path)
+
+    all_frames = []
+    frame_count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_count += 1
+        all_frames.append(frame)
+    return all_frames
+
+
+class VideoDummyDataset(Dataset):
+    def __init__(self, num_samples=100000, data_folder='', width=1024, height=576, sample_frames=25):
         """
         Args:
             num_samples (int): Number of samples in the dataset.
@@ -123,7 +138,7 @@ class DummyDataset(Dataset):
         """
         self.num_samples = num_samples
         # Define the path to the folder containing video frames
-        self.base_folder = 'bdd100k/images/track/mini'
+        self.base_folder = data_folder
         self.folders = os.listdir(self.base_folder)
         self.channels = 3
         self.width = width
@@ -144,10 +159,7 @@ class DummyDataset(Dataset):
         # Randomly select a folder (representing a video) from the base folder
         chosen_folder = random.choice(self.folders)
         folder_path = os.path.join(self.base_folder, chosen_folder)
-        frames = os.listdir(folder_path)
-        # Sort the frames by name
-        frames.sort()
-
+        frames = get_video_frames(folder_path)
         # Ensure the selected folder has at least `sample_frames`` frames
         if len(frames) < self.sample_frames:
             raise ValueError(
@@ -161,26 +173,26 @@ class DummyDataset(Dataset):
         pixel_values = torch.empty((self.sample_frames, self.channels, self.height, self.width))
 
         # Load and process each frame
-        for i, frame_name in enumerate(selected_frames):
-            frame_path = os.path.join(folder_path, frame_name)
-            with Image.open(frame_path) as img:
-                # Resize the image and convert it to a tensor
-                img_resized = img.resize((self.width, self.height))
-                img_tensor = torch.from_numpy(np.array(img_resized)).float()
+        for i, frame in enumerate(selected_frames):
+            # Resize the image and convert it to a tensor
+            img = Image.fromarray(frame)
+            img_resized = img.resize((self.width, self.height))
+            img_tensor = torch.from_numpy(np.array(img_resized)).float()
 
-                # Normalize the image by scaling pixel values to [-1, 1]
-                img_normalized = img_tensor / 127.5 - 1
+            # Normalize the image by scaling pixel values to [-1, 1]
+            img_normalized = img_tensor / 127.5 - 1
 
-                # Rearrange channels if necessary
-                if self.channels == 3:
-                    img_normalized = img_normalized.permute(
-                        2, 0, 1)  # For RGB images
-                elif self.channels == 1:
-                    img_normalized = img_normalized.mean(
-                        dim=2, keepdim=True)  # For grayscale images
+            # Rearrange channels if necessary
+            if self.channels == 3:
+                img_normalized = img_normalized.permute(
+                    2, 0, 1)  # For RGB images
+            elif self.channels == 1:
+                img_normalized = img_normalized.mean(
+                    dim=2, keepdim=True)  # For grayscale images
 
-                pixel_values[i] = img_normalized
+            pixel_values[i] = img_normalized
         return {'pixel_values': pixel_values}
+
 
 # resizing utils
 # TODO: clean up later
@@ -853,7 +865,7 @@ def main():
     # DataLoaders creation:
     args.global_batch_size = args.per_gpu_batch_size * accelerator.num_processes
 
-    train_dataset = DummyDataset(width=args.width, height=args.height, sample_frames=args.num_frames)
+    train_dataset = VideoDummyDataset(width=args.width, height=args.height, sample_frames=args.num_frames)
     sampler = RandomSampler(train_dataset)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
