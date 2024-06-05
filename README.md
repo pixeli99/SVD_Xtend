@@ -69,6 +69,14 @@ It should be noted that we use a resolution of `512*320` for SVD to generate vid
 We have utilized the `Self-Tracking` training from [Boximator](https://arxiv.org/abs/2402.01566) and the `Instance-Enhancer` from [TrackDiffusion](https://arxiv.org/abs/2312.00651).
 For more details, please refer to the paper.
 
+## Part 3: SVD Lora Fintuning(Support 1024x576x25 frames on A100)
+
+### Lora Training Configuration(on the BDD100K dataset)
+```bash
+bash install.sh 
+bash train_svd_lora.sh
+```
+
 ## :label: TODO List
 
 - [ ] Support text2video (WIP)
