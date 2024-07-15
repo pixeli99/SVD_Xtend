@@ -115,7 +115,7 @@ def rand_log_normal(shape, loc=0., scale=1., device='cpu', dtype=torch.float32):
 
 
 class DummyDataset(Dataset):
-    def __init__(self, num_samples=100000, width=1024, height=576, sample_frames=25):
+    def __init__(self, base_folder: str, num_samples=100000, width=1024, height=576, sample_frames=25):
         """
         Args:
             num_samples (int): Number of samples in the dataset.
@@ -123,7 +123,7 @@ class DummyDataset(Dataset):
         """
         self.num_samples = num_samples
         # Define the path to the folder containing video frames
-        self.base_folder = 'bdd100k/images/track/mini'
+        self.base_folder = base_folder
         self.folders = os.listdir(self.base_folder)
         self.channels = 3
         self.width = width
@@ -341,6 +341,11 @@ def tensor_to_vae_latent(t, vae):
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Script to train Stable Diffusion XL for InstructPix2Pix."
+    )
+    parser.add_argument(
+        "--base_folder",
+        required=True,
+        type=str,
     )
     parser.add_argument(
         "--pretrained_model_name_or_path",
@@ -711,6 +716,10 @@ def main():
         variant="fp16",
     )
 
+    # attribute handling for models using DDP
+    if isinstance(unet, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)):
+        unet = unet.module
+
     # Freeze vae and image_encoder
     vae.requires_grad_(False)
     image_encoder.requires_grad_(False)
@@ -853,7 +862,7 @@ def main():
     # DataLoaders creation:
     args.global_batch_size = args.per_gpu_batch_size * accelerator.num_processes
 
-    train_dataset = DummyDataset(width=args.width, height=args.height, sample_frames=args.num_frames)
+    train_dataset = DummyDataset(args.base_folder, width=args.width, height=args.height, sample_frames=args.num_frames)
     sampler = RandomSampler(train_dataset)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -946,9 +955,9 @@ def main():
     ):
         add_time_ids = [fps, motion_bucket_id, noise_aug_strength]
 
-        passed_add_embed_dim = unet.module.config.addition_time_embed_dim * \
+        passed_add_embed_dim = unet.config.addition_time_embed_dim * \
             len(add_time_ids)
-        expected_add_embed_dim = unet.module.add_embedding.linear_1.in_features
+        expected_add_embed_dim = unet.add_embedding.linear_1.in_features
 
         if expected_add_embed_dim != passed_add_embed_dim:
             raise ValueError(
