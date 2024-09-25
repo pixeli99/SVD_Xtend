@@ -45,6 +45,7 @@ from einops import rearrange
 
 import diffusers
 from diffusers import StableVideoDiffusionPipeline
+from diffusers.loaders import StableDiffusionLoraLoaderMixin
 from diffusers.models.lora import LoRALinearLayer
 from diffusers import AutoencoderKLTemporalDecoder
 from diffusers.optimization import get_scheduler
@@ -1067,7 +1068,7 @@ def main():
                             get_peft_model_state_dict(unwrapped_unet)
                         )
 
-                        StableVideoDiffusionPipeline.save_lora_weights(
+                        StableDiffusionLoraLoaderMixin.save_lora_weights(
                             save_directory=save_path,
                             unet_lora_layers=unet_lora_state_dict,
                             safe_serialization=True,
@@ -1146,7 +1147,7 @@ def main():
 
         unwrapped_unet = accelerator.unwrap_model(unet)
         unet_lora_state_dict = convert_state_dict_to_diffusers(get_peft_model_state_dict(unwrapped_unet))
-        StableVideoDiffusionPipeline.save_lora_weights(
+        StableDiffusionLoraLoaderMixin.save_lora_weights(
             save_directory=args.output_dir,
             unet_lora_layers=unet_lora_state_dict,
             safe_serialization=True,
